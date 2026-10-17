@@ -1,5 +1,9 @@
 # OpenCode Web 🥒
 
+[![CI](https://github.com/Keuyn/opencode-web/actions/workflows/ci.yml/badge.svg)](https://github.com/Keuyn/opencode-web/actions/workflows/ci.yml)
+[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](package.json)
+
 Interface de chat no estilo ChatGPT para conversar com o agente do **OpenCode** direto no
 navegador — incluindo leitura/escrita de arquivos, execução de comandos, busca na web,
 permissões, formulários e streaming em tempo real.
@@ -14,6 +18,14 @@ navegador  ──►  server.ts (Express)  ──►  serviço do OpenCode (127.
   React          proxy autenticado          sessões, modelos, ferramentas
   @opencode/client   + Vite (dev)           SSE de eventos
 ```
+
+## Capturas
+
+![Interface de chat do OpenCode Web](docs/screenshot-chat.png)
+
+![Painel de agentes](docs/screenshot-agents.png)
+
+![Demonstração em vídeo](docs/demo.gif)
 
 ## Requisitos
 
