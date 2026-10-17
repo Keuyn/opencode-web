@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react"
 import { useAppState } from "../lib/useStore"
-import { removeSession, renameSession, startNewChat, openSession, setDirectory } from "../lib/store"
+import { removeSession, renameSession, startNewChat, openSession } from "../lib/store"
 import { dayBucket, relativeTime } from "../lib/format"
 import type { SessionInfo } from "../lib/types"
-import { NetworkPanel } from "./NetworkPanel"
+import { NetworkPanel, type PanelTab } from "./NetworkPanel"
 
 const BUCKET_LABELS: Record<string, string> = {
   hoje: "Hoje",
@@ -75,7 +75,7 @@ function SessionRow({ session, active }: { session: SessionInfo; active: boolean
 export function Sidebar({ onClose }: { onClose?: () => void }) {
   const state = useAppState()
   const [search, setSearch] = useState("")
-  const [networkOpen, setNetworkOpen] = useState(false)
+  const [panel, setPanel] = useState<PanelTab | null>(null)
 
   const groups = useMemo(() => {
     const filtered = state.sessions.filter((session) =>
@@ -146,13 +146,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           <button
             type="button"
             className="foot-dir"
-            title={`${state.config.directory} — clique para trocar de diretório`}
-            onClick={() => {
-              const next = window.prompt("Diretório de trabalho:", state.config?.directory ?? "")
-              if (next) void setDirectory(next)
-            }}
+            title={`${state.config.directory} — clique para ver projetos e dispositivos`}
+            onClick={() => setPanel((open) => (open === "project" ? null : "project"))}
           >
-            {state.config.directory}
+            {state.config.project ? state.config.project : "raiz de projetos"}
           </button>
         ) : null}
         <button
@@ -163,11 +160,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               ? "Acesso pela rede ativado — clique para gerenciar"
               : "Acesso pela rede desativado — clique para ativar"
           }
-          onClick={() => setNetworkOpen((open) => !open)}
+          onClick={() => setPanel((open) => (open === "network" ? null : "network"))}
         >
           <span aria-hidden>🌐</span>
         </button>
-        {networkOpen ? <NetworkPanel onClose={() => setNetworkOpen(false)} /> : null}
+        {panel ? <NetworkPanel initialTab={panel} onClose={() => setPanel(null)} /> : null}
       </div>
     </aside>
   )

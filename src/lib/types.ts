@@ -76,8 +76,39 @@ export type NetworkInfo = {
   authRequired: boolean
 }
 
+/** Per-device workspace info sent by `GET /app/devices`. */
+export type DeviceInfo = {
+  key: string
+  name: string
+  project: string
+  owner: boolean
+  ip: string
+  agent: string
+  lastSeen: number
+  /** True for the device making the request. */
+  self: boolean
+}
+
+export type DevicesInfo = {
+  /** Absolute path of the projects root on the server. */
+  root: string
+  /** Existing project folders in the root. */
+  projects: string[]
+  self: string
+  owner: boolean
+  devices: DeviceInfo[]
+}
+
+export type AppConfig = {
+  directory: string
+  project: string
+  projectRoot: string
+  owner: boolean
+  version?: string
+}
+
 export type AppState = {
-  config: { directory: string } | null
+  config: AppConfig | null
   connection: ConnectionStatus
   sessions: SessionInfo[]
   activeSessionID: string | null
@@ -119,6 +150,8 @@ export type AppState = {
   authed: boolean
   /** Local network status (URLs, password, toggle state). */
   network: NetworkInfo | null
+  /** Devices/projects known by the server (isolation view). */
+  devices: DevicesInfo | null
 }
 
 export type { AgentInfo, FormInfo, ModelInfo, PermissionRequest, SessionInboxInfo, SessionInfo }

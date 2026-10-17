@@ -11,12 +11,14 @@ permissões, formulários e streaming em tempo real.
 O aplicativo não fala com nenhum provedor de LLM diretamente: ele usa a **API HTTP do
 serviço do OpenCode** que já roda na sua máquina. Por isso a autenticação, os provedores,
 os modelos, as ferramentas, os agentes e o histórico de sessões são exatamente os mesmos
-que você já usa no terminal.
+que você já usa no terminal — com as conversas separadas por
+[projeto de cada aparelho](#projetos-e-dispositivos).
 
 ```
 navegador  ──►  server.ts (Express)  ──►  serviço do OpenCode (127.0.0.1)
   React          proxy autenticado          sessões, modelos, ferramentas
-  @opencode/client   + Vite (dev)           SSE de eventos
+  @opencode/client   + isolamento por        SSE de eventos
+                     dispositivo + zip
 ```
 
 ## Capturas
@@ -48,9 +50,14 @@ npm start
 # → http://127.0.0.1:3123
 ```
 
-Variáveis de ambiente: `PORT` (padrão `3123`) e `HOST` (fixa o endereço de escuta;
-veja [acesso pela rede local](#acesso-pela-rede-local)), `WEB_TOKEN` (senha fixa,
-dispensando a troca pelo painel) e `NODE_ENV=production` (usado pelo `npm start`).
+Variáveis de ambiente: `PORT` (padrão `3123`), `HOST` (fixa o endereço de escuta; veja
+[acesso pela rede local](#acesso-pela-rede-local)), `WEB_TOKEN` (senha fixa, dispensando a
+troca pelo painel), `PROJECTS_ROOT` (raiz onde os projetos dos dispositivos são criados;
+veja [projetos e dispositivos](#projetos-e-dispositivos)) e `NODE_ENV=production` (usado
+pelo `npm start`).
+
+> O agente **nunca** roda dentro da pasta de instalação do app: por padrão os projetos
+> ficam em `~/opencode-web-projects`.
 
 ## Acesso pela rede local
 
@@ -110,6 +117,76 @@ WEB_TOKEN=minha-senha npm run lan  # senha fixa por variável, no lugar do paine
 > voltar ao estado de fábrica (senha do terminal rotativa, rede desligada), apague
 > `~/.config/opencode-web/settings.json`.
 
+## Projetos e dispositivos
+
+Cada aparelho trabalha dentro do **próprio projeto** — uma pasta na raiz de projetos
+(`~/opencode-web-projects` por padrão, ou o que estiver em `PROJECTS_ROOT`). Como as
+sessões do OpenCode são escopadas por diretório, isso separa **conversas e arquivos**:
+ninguém vê o histórico nem os arquivos de outro aparelho.
+
+| Quem | Onde trabalha |
+| --- | --- |
+| o computador do servidor (ou `127.0.0.1`) | na raiz de projetos e em qualquer projeto dela |
+| cada outro aparelho da rede | em uma pasta só dele, criada no primeiro acesso |
+
+Tudo roda no computador do servidor: o celular é só a tela. O que o agente executa, lê e
+escreve acontece na máquina onde o `npm run dev` está aberto.
+
+![Aba de projetos](docs/screenshot-projects.png)
+
+![Aba de aparelhos](docs/screenshot-devices.png)
+
+### Onde fica cada controle
+
+- **📁 botão do projeto** (rodapé da barra lateral) abre a aba *Projeto*: mostra a pasta
+  atual, a raiz de projetos, deixa criar/trocar de projeto e baixar o projeto em `.zip`.
+  Trocar de projeto recarrega a interface (as conversas passam a ser as daquela pasta).
+- **🌐** abre a aba *Rede* (endereço, QR code, senha, interruptor).
+- A aba **Aparelhos** lista quem já acessou: nome, IP, projeto, último acesso. O dono pode
+  renomear, mudar o projeto de cada aparelho, dar/tirar admin e **esquecer** (com a opção
+  de apagar os arquivos junto).
+
+Só o computador do servidor administra: interruptor de rede, senha, projetos e a lista de
+aparelhos. Um aparelho convidado vê as abas em modo leitura.
+
+### Baixar o projeto em `.zip`
+
+O botão *Baixar .zip* (aba *Projeto*) monta o pacote no servidor e envia para o navegador.
+Ele ignora o que dá para gerar de novo, então o arquivo sai leve e pronto para
+compartilhar:
+
+```
+node_modules  .git  dist  build  out  .next  .nuxt  .svelte-kit  target  vendor
+coverage  __pycache__  .venv  venv  .cache  .turbo  .parcel-cache  .pytest_cache
+.mypy_cache  .gradle  .idea  *.log  .DS_Store  Thumbs.db
+```
+
+Arquivos de configuração (como `.env`) **entram** no zip; caches e `build` não. O caminho
+do zip não aceita parâmetro — o servidor sempre empacota a pasta do próprio dispositivo.
+Limite: 500 MB de conteúdo.
+
+### Como o isolamento é garantido
+
+A API do OpenCode devolve sessões de *todos* os diretórios (o header
+`x-opencode-directory` não filtra a listagem), então a barreira fica no proxy do
+`server.ts`, não no navegador:
+
+- `GET /api/session` e `/api/session/active` são **filtrados** pelo diretório do aparelho;
+- qualquer rota que carregue um `ses_…` de outro aparelho responde `403` (o `server.ts`
+  mantém um índice `sessão → diretório`);
+- criar sessão força `location.directory` para o projeto do aparelho (e recusa um
+  `parentID` de conversa alheia);
+- `/api/location*`, `/api/fs/*`, `/api/experimental/*`, `/api/debug/*`, `/api/credential*`,
+  `/api/form` e `/api/permission/saved*` são bloqueados para convidados (são operações do
+  servidor, não do aparelho), assim como mover uma sessão de pasta;
+- o SSE (`/api/event`) é filtrado quadro a quadro: eventos de outras pastas não chegam ao
+  navegador do convidado.
+
+A identidade do aparelho vem do endereço da conexão (o cliente não escolhe), então um
+convidado não consegue se passar por outro. Como é o IP que identifica, um aparelho que
+trocar de endereço (DHCP, VPN) aparece como novo — basta apontar o projeto dele para a
+pasta antiga na aba *Aparelhos*.
+
 ## O que dá para fazer
 
 - **Conversar com streaming** — texto, raciocínio (bloco recolhível), markdown completo e
@@ -141,9 +218,10 @@ WEB_TOKEN=minha-senha npm run lan  # senha fixa por variável, no lugar do paine
   enviar na hora ou enfileirar para depois; mensagens na fila aparecem acima do campo de
   texto, com opção de cancelar ou antecipar.
 - **Interromper** — botão *Parar* envia `session.interrupt` e o streaming para na hora.
-- **Diretório de trabalho** — por padrão é o diretório onde o servidor foi iniciado
-  (mostrado no rodapé da barra lateral). Clique nele para trocar de pasta: as sessões,
-  ferramentas e permissões passam a valer para o novo diretório.
+- **Projetos por aparelho** — cada dispositivo trabalha na própria pasta da raiz de
+  projetos, com conversas e arquivos separados (veja
+  [projetos e dispositivos](#projetos-e-dispositivos)). O rodapé mostra o projeto atual;
+  clique nele para trocar, criar ou baixar em `.zip`.
 - **Acesso pela rede local** — o botão 🌐 no rodapé liga/desliga o acesso de outros
   aparelhos na mesma rede (senha obrigatória sempre que estiver ligado), mostra o
   endereço com QR code e permite trocar a senha a qualquer momento. Veja
@@ -154,23 +232,25 @@ WEB_TOKEN=minha-senha npm run lan  # senha fixa por variável, no lugar do paine
 ```
 server.ts                    servidor Express: /app/config, /app/agents (criar/remover
                              agentes no opencode.json), /app/auth + /app/login +
-                             /app/password (senha) e /app/network (acesso pela rede)
-                             + proxy streaming para a API
+                             /app/password (senha), /app/network (acesso pela rede),
+                             /app/workspace + /app/devices (projetos e aparelhos),
+                             /app/download (zip) e o proxy streaming para a API — com o
+                             filtro de sessões/SSE por dispositivo
 index.html                   entrada do Vite
 src/main.tsx                 bootstrap (cria o cliente e conecta o stream de eventos)
 src/App.tsx                  layout (barra lateral + chat) e porteiro de senha
 src/lib/store.ts             estado da aplicação, redução dos eventos SSE e ações
 src/lib/types.ts             tipos do domínio da interface
 src/lib/format.ts            tempo, tokens, resumo de ferramentas
-src/components/*             Sidebar, Header, AgentPanel, NetworkPanel, LoginGate,
-                             ChatView, Message, ToolCard, Composer, PermissionCard,
-                             FormCard, Markdown
+src/components/*             Sidebar, Header, AgentPanel, NetworkPanel, ProjectPanel,
+                             DevicePanel, LoginGate, ChatView, Message, ToolCard,
+                             Composer, PermissionCard, FormCard, Markdown
 scripts/smoke-store.ts       teste de integração do reducer (sem navegador)
 scripts/smoke-dom.mjs        teste de renderização do bundle real dentro do jsdom
 ```
 
-A senha de acesso e o estado do interruptor de rede ficam em
-`~/.config/opencode-web/settings.json` (fora do projeto).
+A senha personalizada, o estado do interruptor de rede, a raiz de projetos e os
+aparelhos conhecidos ficam em `~/.config/opencode-web/settings.json` (fora do projeto).
 
 ### Detalhes de integração
 
@@ -178,9 +258,9 @@ A senha de acesso e o estado do interruptor de rede ficam em
   (`window.location.origin`). Todas as chamadas `/api/*` são repassadas pelo `server.ts`,
   que injeta as credenciais obtidas via `Service.discover()` / `Service.headers()`.
 - O stream de eventos (`GET /api/event`, SSE) é repassado sem buffer, então o streaming é
-  em tempo real.
-- O diretório base vai no header `x-opencode-directory` do cliente, deixando toda a
-  interface limitada ao projeto escolhido.
+  em tempo real (para convidados, com os quadros de outras pastas descartados).
+- O cliente manda o diretório em `x-opencode-directory`, mas quem decide é o servidor: o
+  proxy sempre reescreve esse header com a pasta do dispositivo da conexão.
 - O estado é mantido fora do React e notificado em lotes por `requestAnimationFrame`, o
   que evita re-renderizar a cada token recebido.
 
@@ -204,9 +284,17 @@ npm run smoke:dom
 
 Ele carrega o bundle de produção dentro do jsdom, confere marca, lista de sessões,
 seletor de modelo, histórico, cartões de ferramenta, markdown e raciocínio, abre o painel
-de agentes (seções e formulário de criação), abre o painel de rede (interruptor e senha
-sugerida, fechando com `Esc`) e depois envia uma mensagem real, verificando a resposta do
-assistente.
+de agentes (seções e formulário de criação), abre o painel 🌐 (interruptor, senha, abas
+*Projeto* e *Aparelhos*, fechando com `Esc`) e depois envia uma mensagem real, verificando
+a resposta do assistente.
+
+O teste precisa de sessões na pasta do projeto — rode-o apontando a raiz para este
+repositório, por exemplo:
+
+```sh
+PROJECTS_ROOT="$(pwd)" npm run dev   # em um terminal
+SMOKE_URL=http://127.0.0.1:3123 npm run smoke:dom
+```
 
 ## Agentes personalizados
 
@@ -242,6 +330,9 @@ são lidos com suporte a comentários.
 | Modelo listado mas resposta falha | Provedor/modelo sem credencial configurada no OpenCode |
 | Nada acontece ao enviar | Verifique o painel de permissões ou o log do terminal onde o `npm run dev` roda |
 | Pede senha ao abrir a interface | O acesso pela rede está ligado: a senha personalizada aparece no painel 🌐 e a do terminal no log do servidor |
+| O agente está trabalhando na pasta errada | Cada aparelho usa a pasta do próprio projeto: confira a aba *Projeto* (ou *Aparelhos*, no dono) |
+| As conversas antigas sumiram ao trocar de projeto | Cada projeto tem as próprias sessões — volte para a pasta anterior na aba *Projeto* |
+| Aparelho duplicado na aba *Aparelhos* | O IP dele mudou (DHCP/VPN): aponte o projeto do aparelho novo para a pasta antiga e esqueça o antigo |
 | O celular não abre mesmo com a rede ligada | Firewall do sistema bloqueando a porta; libere a porta (padrão `3123`) para a rede local |
 
 ## Licença

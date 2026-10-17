@@ -122,6 +122,7 @@ if (agentTrigger) {
 // painel de rede local (acesso por outros dispositivos)
 const netTrigger = window.document.querySelector(".foot-net")
 results.push(["botão de rede", Boolean(netTrigger)])
+results.push(["botão do projeto", Boolean(window.document.querySelector(".foot-dir"))])
 if (netTrigger) {
   netTrigger.dispatchEvent(new window.MouseEvent("click", { bubbles: true }))
   results.push(["painel de rede", await waitFor("painel de rede", () => Boolean(window.document.querySelector(".network-panel")))])
@@ -137,6 +138,32 @@ if (netTrigger) {
     "campo de alterar senha",
     await waitForQuiet(() => Boolean(window.document.querySelector("#network-new"))),
   ])
+
+  const tabs = Array.from(window.document.querySelectorAll(".panel-tabs .panel-tab"))
+  results.push(["abas do painel", tabs.length === 3])
+
+  const projectTab = tabs.find((tab) => tab.textContent?.includes("Projeto"))
+  if (projectTab) {
+    projectTab.dispatchEvent(new window.MouseEvent("click", { bubbles: true }))
+    results.push([
+      "aba de projeto",
+      await waitForQuiet(() => (window.document.querySelector("#project-dir")?.value.length ?? 0) > 1),
+    ])
+    results.push([
+      "raiz dos projetos",
+      await waitForQuiet(() => (window.document.querySelector(".network-panel")?.textContent ?? "").includes("Raiz dos projetos")),
+    ])
+  }
+
+  const devicesTab = tabs.find((tab) => tab.textContent?.includes("Aparelhos"))
+  if (devicesTab) {
+    devicesTab.dispatchEvent(new window.MouseEvent("click", { bubbles: true }))
+    results.push([
+      "aba de aparelhos",
+      await waitForQuiet(() => window.document.querySelectorAll(".device-list .device-row").length > 0),
+    ])
+  }
+
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
   await sleep(250)
   results.push(["painel fecha com Esc", !window.document.querySelector(".network-panel")])

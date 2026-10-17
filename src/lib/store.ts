@@ -11,7 +11,18 @@ import {
   type SessionMessageAssistantTool,
   type SessionMessageInfo,
 } from "@opencode/client"
-import type { AppState, ChatMessage, DeliveryMode, ModelRef, NetworkInfo, Part, ToolCall, ToolContent } from "./types"
+import type {
+  AppConfig,
+  AppState,
+  ChatMessage,
+  DeliveryMode,
+  DevicesInfo,
+  ModelRef,
+  NetworkInfo,
+  Part,
+  ToolCall,
+  ToolContent,
+} from "./types"
 
 export type OpenCodeClient = ReturnType<typeof OpenCode.make>
 
@@ -46,6 +57,7 @@ const initialState: AppState = {
   authRequired: false,
   authed: true,
   network: null,
+  devices: null,
 }
 
 let state: AppState = initialState
@@ -119,15 +131,15 @@ async function startApp() {
     patch({ authRequired: true, authed: false, connection: "offline" })
     return
   }
-  const config = (await response.json()) as { directory: string }
+  const config = (await response.json()) as AppConfig
   directory = config.directory
   client = OpenCode.make({
     baseUrl: window.location.origin,
     headers: { "x-opencode-directory": encodeURIComponent(directory) },
   })
-  patch({ config: { directory }, authed: true })
+  patch({ config, authed: true })
 
-  await Promise.allSettled([loadModels(), loadAgents(), loadAgentConfig(), loadSessions(), loadNetwork()])
+  await Promise.allSettled([loadModels(), loadAgents(), loadAgentConfig(), loadSessions(), loadNetwork(), loadDevices()])
   if (state.sessions.length > 0) await openSession(state.sessions[0].id)
   startEventLoop()
   startActivityPoller()
@@ -162,6 +174,63 @@ export async function loadNetwork(): Promise<void> {
   } catch {
     // silencioso: mantém o último estado conhecido
   }
+}
+
+/** Reads the devices/projects map (per-device isolation). */
+export async function loadDevices(): Promise<void> {
+  try {
+    const response = await fetch("/app/devices")
+    if (!response.ok) return
+    patch({ devices: (await response.json()) as DevicesInfo })
+  } catch {
+    // silencioso: mantém o último estado conhecido
+  }
+}
+
+/**
+ * Switches the project of *this* device (owner only). Everything runs on the
+ * server, so the page reloads to rebuild state for the new directory.
+ */
+export async function chooseProject(project: string, create = false): Promise<void> {
+  const response = await fetch("/app/workspace", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(create ? { name: project } : { project }),
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null
+    throw new Error(body?.message ?? `falha ao trocar de projeto (${response.status})`)
+  }
+  window.location.reload()
+}
+
+/** Renames/moves/promotes another device (owner only). */
+export async function patchDevice(key: string, patchBody: { name?: string; project?: string; owner?: boolean }): Promise<void> {
+  const response = await fetch(`/app/devices/${encodeURIComponent(key)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patchBody),
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null
+    throw new Error(body?.message ?? `falha ao atualizar (${response.status})`)
+  }
+  patch({ devices: (await response.json()) as DevicesInfo })
+}
+
+/** Forgets a device; optionally deletes its project folder. */
+export async function forgetDevice(key: string, wipe: boolean): Promise<void> {
+  const response = await fetch(`/app/devices/${encodeURIComponent(key)}?wipe=${wipe ? 1 : 0}`, { method: "DELETE" })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null
+    throw new Error(body?.message ?? `falha ao remover (${response.status})`)
+  }
+  patch({ devices: (await response.json()) as DevicesInfo })
+}
+
+/** Downloads the current project as a zip (server-side, no path parameter). */
+export function downloadProject(): void {
+  window.location.href = "/app/download"
 }
 
 /** Enables/disables LAN access. Reloads the page because the server rebinds. */
@@ -651,36 +720,6 @@ export async function loadSessions() {
 
 function normalize(path: string): string {
   return path.replace(/\/+$/, "")
-}
-
-export async function setDirectory(next: string) {
-  const trimmed = normalize(next.trim())
-  if (!trimmed || trimmed === normalize(directory)) return
-  directory = trimmed
-  client = OpenCode.make({
-    baseUrl: window.location.origin,
-    headers: { "x-opencode-directory": encodeURIComponent(directory) },
-  })
-  patch({
-    config: { directory },
-    sessions: [],
-    activeSessionID: null,
-    activeSession: null,
-    messages: [],
-    olderCursor: null,
-    permissions: [],
-    forms: [],
-    error: null,
-    status: "idle",
-    statusMessage: null,
-    children: [],
-    inbox: [],
-    running: [],
-    returnSessionID: null,
-  })
-  await loadSessions().catch((error) => patch({ error: errorMessage(error) }))
-  await loadAgents().catch(() => {})
-  await loadAgentConfig().catch(() => {})
 }
 
 export async function loadModels() {
