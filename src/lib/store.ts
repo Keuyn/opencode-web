@@ -165,11 +165,11 @@ export async function loadNetwork(): Promise<void> {
 }
 
 /** Enables/disables LAN access. Reloads the page because the server rebinds. */
-export async function setNetwork(enabled: boolean, password?: string): Promise<void> {
+export async function setNetwork(enabled: boolean): Promise<void> {
   const response = await fetch("/app/network", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ enabled, token: password }),
+    body: JSON.stringify({ enabled }),
   })
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { message?: string } | null
@@ -178,6 +178,29 @@ export async function setNetwork(enabled: boolean, password?: string): Promise<v
   // O servidor reabre a porta ~300ms depois de responder; recarrega já no novo endereço.
   await new Promise((resolve) => setTimeout(resolve, 600))
   window.location.reload()
+}
+
+/**
+ * Changes the password other devices use (`null` goes back to the rotating
+ * terminal password). Applies immediately, no reload needed.
+ */
+export async function changePassword(password: string | null): Promise<void> {
+  const response = await fetch("/app/password", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(password === null ? { reset: true } : { password }),
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null
+    throw new Error(body?.message ?? `falha ao alterar (${response.status})`)
+  }
+  const body = (await response.json()) as { custom?: boolean; password?: string }
+  const current = state.network
+  if (current) {
+    patch({ network: { ...current, custom: Boolean(body.custom), password: body.password ?? current.password } })
+  } else {
+    await loadNetwork()
+  }
 }
 
 function startEventLoop() {

@@ -1866,14 +1866,39 @@ kbd {
   color: var(--text);
 }
 
-.network-save {
-  align-self: flex-start;
-  font-size: 12px;
-  color: var(--accent);
-  padding: 4px 0;
+.network-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
-.network-save:hover {
+.network-actions button {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-input);
+  border-radius: 9px;
+  padding: 6px 11px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.network-actions button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.network-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.network-actions button.network-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.network-actions button.network-primary:hover:not(:disabled) {
+  background: var(--bg-hover);
   color: var(--accent-strong);
 }
 

@@ -49,8 +49,8 @@ npm start
 ```
 
 Variáveis de ambiente: `PORT` (padrão `3123`) e `HOST` (fixa o endereço de escuta;
-veja [acesso pela rede local](#acesso-pela-rede-local)), `WEB_TOKEN` (define a senha
-de acesso em vez de gerar uma) e `NODE_ENV=production` (usado pelo `npm start`).
+veja [acesso pela rede local](#acesso-pela-rede-local)), `WEB_TOKEN` (senha fixa,
+dispensando a troca pelo painel) e `NODE_ENV=production` (usado pelo `npm start`).
 
 ## Acesso pela rede local
 
@@ -60,40 +60,55 @@ no 🌐 no rodapé da barra lateral e ligue **Disponibilizar na rede local**:
 
 ![Painel de rede local](docs/screenshot-network.png)
 
-O painel mostra o endereço (com QR code para abrir direto no celular) e a senha de
-acesso. Três detalhes importantes:
+### As duas senhas
 
-- **Com a rede ligada a senha passa a ser obrigatória.** As chamadas `/api/*` e
-  `/app/*` ficam protegidas por um cookie `HttpOnly` (a página não consegue ler a
-  senha pelo JavaScript) e quem não tiver a senha recebe `401`. Como o acesso é HTTP
-  na rede local, o cookie não usa a flag `Secure`. O mesmo painel permite sair do
-  dispositivo.
-- **Desligar fecha de verdade.** O servidor volta a escutar apenas em `127.0.0.1` e
-  as conexões abertas são encerradas, então nenhum outro aparelho alcança a
-  interface.
-- **A senha e o estado do interruptor ficam salvos** em
-  `~/.config/opencode-web/settings.json`, sobrevivendo a reinícios. Ao subir com a
-  rede ligada o terminal também imprime a senha e o endereço:
+| Senha | Onde você vê | Quanto tempo vale |
+| --- | --- | --- |
+| **senha do terminal** | no log do servidor, a cada execução | só nesta execução — é sorteada de novo a cada reinício |
+| **senha personalizada** | no painel 🌐, em *Senha para os outros aparelhos* | até você trocar (ou voltar para a do terminal) |
+
+A **senha do terminal** é a chave de ativação e de recuperação: ela sempre entra,
+então mesmo que você esqueça a senha personalizada basta olhar o terminal para
+voltar a acessar. A **senha personalizada** é a que você define no painel — a
+qualquer momento, sem reiniciar — e entrega para os outros dispositivos digitarem.
+Quem já estava conectado precisa informar a senha nova depois de uma troca.
 
 ```
 [opencode-web] interface em http://0.0.0.0:3123
 [opencode-web] acesso pela rede: ATIVADO (senha obrigatória)
-[opencode-web] senha de acesso: 4f3a1c…
+[opencode-web] senha de acesso: cafe-com-leite
+[opencode-web]    (senha personalizada definida no painel 🌐)
+[opencode-web] senha do terminal: 4f3a1c…
 [opencode-web] acesse de outro dispositivo: http://192.168.0.42:3123
 ```
 
 ![Tela de senha](docs/screenshot-login.png)
 
+### O que muda quando a rede está ligada
+
+- **A senha passa a ser obrigatória.** As chamadas `/api/*` e `/app/*` ficam
+  protegidas por um cookie `HttpOnly` (a página não consegue ler a senha pelo
+  JavaScript) e quem não tiver a senha recebe `401`. Como o acesso é HTTP na rede
+  local, o cookie não usa a flag `Secure`. O painel também permite sair do
+  dispositivo.
+- **Desligar fecha de verdade.** O servidor volta a escutar apenas em `127.0.0.1` e
+  as conexões abertas são encerradas, então nenhum outro aparelho alcança a
+  interface.
+- **As preferências ficam salvas** em `~/.config/opencode-web/settings.json` (a senha
+  personalizada e o estado do interruptor), sobrevivendo a reinícios. A senha do
+  terminal não é gravada em disco.
+
 Para deixar sempre ligado sem usar o painel:
 
 ```sh
 npm run lan                        # equivale a HOST=0.0.0.0 (o interruptor fica travado)
-WEB_TOKEN=minha-senha npm run lan  # usa uma senha fixa em vez de gerar uma
+WEB_TOKEN=minha-senha npm run lan  # senha fixa por variável, no lugar do painel
 ```
 
-> Definir `HOST` desliga o interruptor do painel (o endereço passa a ser fixo).
-> Definir `WEB_TOKEN` também exige a senha mesmo em `localhost`. Para voltar ao
-> estado de fábrica, apague `~/.config/opencode-web/settings.json`.
+> `HOST` desliga o interruptor do painel (o endereço passa a ser fixo). `WEB_TOKEN`
+> define a senha de uma vez por todas e esconde os campos de troca no painel. Para
+> voltar ao estado de fábrica (senha do terminal rotativa, rede desligada), apague
+> `~/.config/opencode-web/settings.json`.
 
 ## O que dá para fazer
 
@@ -130,17 +145,17 @@ WEB_TOKEN=minha-senha npm run lan  # usa uma senha fixa em vez de gerar uma
   (mostrado no rodapé da barra lateral). Clique nele para trocar de pasta: as sessões,
   ferramentas e permissões passam a valer para o novo diretório.
 - **Acesso pela rede local** — o botão 🌐 no rodapé liga/desliga o acesso de outros
-  aparelhos na mesma rede (senha obrigatória sempre que estiver ligado) e mostra o
-  endereço, o QR code e a senha. Veja
+  aparelhos na mesma rede (senha obrigatória sempre que estiver ligado), mostra o
+  endereço com QR code e permite trocar a senha a qualquer momento. Veja
   [acesso pela rede local](#acesso-pela-rede-local).
 
 ## Estrutura
 
 ```
 server.ts                    servidor Express: /app/config, /app/agents (criar/remover
-                             agentes no opencode.json), /app/auth + /app/login
-                             (senha) e /app/network (acesso pela rede) + proxy
-                             streaming para a API
+                             agentes no opencode.json), /app/auth + /app/login +
+                             /app/password (senha) e /app/network (acesso pela rede)
+                             + proxy streaming para a API
 index.html                   entrada do Vite
 src/main.tsx                 bootstrap (cria o cliente e conecta o stream de eventos)
 src/App.tsx                  layout (barra lateral + chat) e porteiro de senha
@@ -226,7 +241,7 @@ são lidos com suporte a comentários.
 | `openai_unreachable` / 502 nas respostas | Mesmo caso acima; o proxy tenta redescobrir a porta automaticamente |
 | Modelo listado mas resposta falha | Provedor/modelo sem credencial configurada no OpenCode |
 | Nada acontece ao enviar | Verifique o painel de permissões ou o log do terminal onde o `npm run dev` roda |
-| Pede senha ao abrir a interface | O acesso pela rede está ligado: a senha está em `~/.config/opencode-web/settings.json` e no log do servidor |
+| Pede senha ao abrir a interface | O acesso pela rede está ligado: a senha personalizada aparece no painel 🌐 e a do terminal no log do servidor |
 | O celular não abre mesmo com a rede ligada | Firewall do sistema bloqueando a porta; libere a porta (padrão `3123`) para a rede local |
 
 ## Licença

@@ -16,18 +16,28 @@ const projectDirectory = process.cwd()
  * Acesso pela rede local. Por padrão a interface só escuta em localhost; o
  * interruptor do painel "Rede" (ou `HOST`) libera os demais dispositivos.
  * Quando isso acontece, a autenticação por senha passa a valer para todos.
+ *
+ * São duas credenciais:
+ * - a **senha do terminal** (`runToken`), sorteada a cada execução e impressa no
+ *   log: sempre serve para entrar (ativar/recuperar o acesso) nesta execução;
+ * - a **senha personalizada** (`customPassword`), definida no painel 🌐, que fica
+ *   salva entre reinícios e é a que você entrega para os outros dispositivos.
  */
 const forcedHost = process.env.HOST?.trim() || undefined
 const envToken = process.env.WEB_TOKEN?.trim() || undefined
 const COOKIE_NAME = "opencode_web"
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+const MIN_PASSWORD = 6
 const configDirectory = process.env.XDG_CONFIG_HOME?.trim() || path.join(homedir(), ".config")
 const SETTINGS_FILE = path.join(configDirectory, "opencode-web", "settings.json")
 
-type Settings = { token?: string; networkEnabled?: boolean }
+type Settings = { password?: string; networkEnabled?: boolean }
 
 let networkEnabled = false
-let token = ""
+/** Senha do terminal: nova a cada execução (não é persistida). */
+let runToken = ""
+/** Senha personalizada do painel: definida pelo usuário, salva em disco. */
+let customPassword: string | undefined
 
 function bindHost(): string {
   if (forcedHost) return forcedHost
@@ -37,6 +47,16 @@ function bindHost(): string {
 function isLoopback(host: string): boolean {
   const value = host.toLowerCase()
   return value === "127.0.0.1" || value === "::1" || value === "localhost"
+}
+
+/** Senha efetiva: a que os dispositivos digitam para entrar. */
+function accessPassword(): string {
+  return envToken ?? customPassword ?? runToken
+}
+
+/** Todas as senhas aceitas no login (a do terminal funciona sempre). */
+function acceptedPasswords(): string[] {
+  return [runToken, customPassword, envToken].filter((value): value is string => Boolean(value))
 }
 
 /** A senha só é exigida quando a interface é alcançável por outros aparelhos. */
@@ -100,6 +120,15 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(left, right)
 }
 
+/** Compara com qualquer senha aceita, sempre em tempo constante. */
+function matchesAny(value: string): boolean {
+  let found = false
+  for (const candidate of acceptedPasswords()) {
+    if (safeEqual(value, candidate)) found = true
+  }
+  return found
+}
+
 function cookieHeader(value: string, maxAge: number): string {
   return [
     `${COOKIE_NAME}=${encodeURIComponent(value)}`,
@@ -113,7 +142,7 @@ function cookieHeader(value: string, maxAge: number): string {
 function authorized(req: Request): boolean {
   if (!authEnabled()) return true
   const value = parseCookies(req.headers.cookie)[COOKIE_NAME]
-  return Boolean(value) && Boolean(token) && safeEqual(value, token)
+  return Boolean(value) && matchesAny(value)
 }
 
 type Endpoint = Awaited<ReturnType<typeof Service.ensure>>
@@ -397,17 +426,43 @@ app.get("/app/auth", (_req, res) => {
 
 app.post("/app/login", express.json(), (req, res) => {
   const value = String((req.body as { token?: unknown } | undefined)?.token ?? "")
-  if (!token || !safeEqual(value, token)) {
+  if (!value || !matchesAny(value)) {
     res.status(401).json({ error: "invalid_token", message: "Senha incorreta." })
     return
   }
-  res.setHeader("set-cookie", cookieHeader(token, COOKIE_MAX_AGE))
+  res.setHeader("set-cookie", cookieHeader(value, COOKIE_MAX_AGE))
   res.json({ ok: true })
 })
 
 app.post("/app/logout", (_req, res) => {
   res.setHeader("set-cookie", cookieHeader("", 0))
   res.json({ ok: true })
+})
+
+/** Troca a senha personalizada a qualquer momento (sem reabrir o servidor). */
+app.post("/app/password", express.json(), async (req, res) => {
+  if (envToken) {
+    res.status(409).json({ error: "locked", message: "A senha é definida pela variável WEB_TOKEN." })
+    return
+  }
+  const body = (req.body ?? {}) as { password?: unknown; reset?: unknown }
+  if (body.reset) {
+    customPassword = undefined
+  } else {
+    const candidate = typeof body.password === "string" ? body.password.trim() : ""
+    if (candidate.length < MIN_PASSWORD) {
+      res.status(400).json({
+        error: "weak_password",
+        message: `A senha precisa ter pelo menos ${MIN_PASSWORD} caracteres.`,
+      })
+      return
+    }
+    customPassword = candidate
+  }
+  await saveSettings({ password: customPassword, networkEnabled })
+  // Mantém este navegador autenticado com a nova senha.
+  res.setHeader("set-cookie", cookieHeader(accessPassword(), COOKIE_MAX_AGE))
+  res.json({ ok: true, custom: Boolean(customPassword), password: accessPassword() })
 })
 
 app.get("/app/network", (_req, res) => {
@@ -417,7 +472,9 @@ app.get("/app/network", (_req, res) => {
     host: bindHost(),
     port: PORT,
     urls: lanUrls(),
-    token,
+    password: accessPassword(),
+    custom: Boolean(customPassword),
+    env: Boolean(envToken),
     authRequired: authEnabled(),
   })
 })
@@ -427,24 +484,14 @@ app.post("/app/network", express.json(), async (req, res) => {
     res.status(409).json({ error: "locked", message: "O endereço é definido pela variável HOST." })
     return
   }
-  const body = (req.body ?? {}) as { enabled?: unknown; token?: unknown }
+  const body = (req.body ?? {}) as { enabled?: unknown }
   const enabled = Boolean(body.enabled)
-  if (enabled) {
-    const candidate = typeof body.token === "string" ? body.token.trim() : ""
-    if (candidate && candidate.length < 6) {
-      res.status(400).json({ error: "weak_token", message: "A senha precisa ter pelo menos 6 caracteres." })
-      return
-    }
-    if (candidate && !envToken) token = candidate
-    if (!token) {
-      res.status(400).json({ error: "token_required", message: "Defina uma senha para ativar o acesso pela rede." })
-      return
-    }
-    // Mantém este navegador autenticado após a reabertura.
-    res.setHeader("set-cookie", cookieHeader(token, COOKIE_MAX_AGE))
-  }
   networkEnabled = enabled
-  if (!envToken) await saveSettings({ token, networkEnabled })
+  if (!envToken) await saveSettings({ password: customPassword, networkEnabled })
+  if (enabled || authEnabled()) {
+    // Mantém este navegador autenticado depois que a porta é reaberta.
+    res.setHeader("set-cookie", cookieHeader(accessPassword(), COOKIE_MAX_AGE))
+  }
   res.json({ enabled, reload: true })
   setTimeout(() => {
     void rebind()
@@ -526,7 +573,13 @@ function logStartup() {
   if (forcedHost) console.log(`[opencode-web] endereço fixado por HOST=${forcedHost}`)
   if (authEnabled()) {
     console.log("[opencode-web] acesso pela rede: ATIVADO (senha obrigatória)")
-    console.log(`[opencode-web] senha de acesso: ${token}`)
+    console.log(`[opencode-web] senha de acesso: ${accessPassword()}`)
+    if (customPassword) {
+      console.log("[opencode-web]    (senha personalizada definida no painel 🌐)")
+    } else {
+      console.log("[opencode-web]    (senha do terminal: muda a cada execução)")
+    }
+    console.log(`[opencode-web] senha do terminal: ${runToken}`)
     for (const url of lanUrls()) console.log(`[opencode-web] acesse de outro dispositivo: ${url}`)
   } else {
     console.log("[opencode-web] acesso pela rede: desativado (somente esta máquina)")
@@ -553,10 +606,12 @@ async function rebind() {
 
 async function bootstrap() {
   const settings = await loadSettings()
-  token = envToken ?? settings.token ?? randomBytes(24).toString("hex")
+  runToken = randomBytes(24).toString("hex")
+  customPassword = envToken ? undefined : settings.password?.trim() || undefined
   networkEnabled = forcedHost ? !isLoopback(forcedHost) : Boolean(settings.networkEnabled)
-  if (!envToken && !forcedHost && settings.token !== token) {
-    await saveSettings({ token, networkEnabled })
+  // A senha do terminal nunca é gravada em disco (é nova a cada execução).
+  if (!envToken && !forcedHost && settings.password !== customPassword) {
+    await saveSettings({ password: customPassword, networkEnabled })
   }
 
   if (isProduction) {

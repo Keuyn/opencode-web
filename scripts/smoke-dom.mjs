@@ -130,8 +130,12 @@ if (netTrigger) {
     await waitForQuiet(() => Boolean(window.document.querySelector(".network-switch input"))),
   ])
   results.push([
-    "senha de acesso sugerida",
+    "senha para outros aparelhos",
     await waitForQuiet(() => (window.document.querySelector("#network-password")?.value.length ?? 0) >= 6),
+  ])
+  results.push([
+    "campo de alterar senha",
+    await waitForQuiet(() => Boolean(window.document.querySelector("#network-new"))),
   ])
   window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
   await sleep(250)

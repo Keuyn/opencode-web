@@ -67,8 +67,12 @@ export type NetworkInfo = {
   port: number
   /** Reachable URLs for other devices on the same network. */
   urls: string[]
-  /** Access password (shown only to authenticated clients). */
-  token: string
+  /** Password other devices type to get in (see `custom`). */
+  password: string
+  /** True when the password was chosen in the panel and survives restarts. */
+  custom: boolean
+  /** True when the password comes from the WEB_TOKEN variable. */
+  env: boolean
   authRequired: boolean
 }
 
