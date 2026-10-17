@@ -1,0 +1,59 @@
+{
+  "name": "opencode-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interface web (pt-BR) no estilo ChatGPT para conversar com o agente do OpenCode — React + Vite + @opencode/client.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Keuyn (https://github.com/Keuyn)",
+  "homepage": "https://github.com/Keuyn/opencode-web#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Keuyn/opencode-web.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Keuyn/opencode-web/issues"
+  },
+  "keywords": [
+    "opencode",
+    "ai",
+    "agent",
+    "llm",
+    "chat",
+    "chatgpt",
+    "web",
+    "react",
+    "vite",
+    "pt-br"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch server.ts",
+    "build": "vite build",
+    "start": "NODE_ENV=production tsx server.ts",
+    "typecheck": "tsc --noEmit",
+    "smoke": "tsx scripts/smoke-store.ts",
+    "smoke:dom": "node scripts/smoke-dom.mjs"
+  },
+  "dependencies": {
+    "@opencode/client": "^2.0.29",
+    "dompurify": "^3.4.17",
+    "express": "^5.3.0",
+    "marked": "^16.4.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "jsdom": "^30.1.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.7"
+  }
+}

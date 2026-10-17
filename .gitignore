@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.env
+.env.local
+
+# Arquivos locais/pessoais — nunca versionar
+continue
+token
+token.*
