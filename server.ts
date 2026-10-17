@@ -1,5 +1,7 @@
+import { randomBytes, timingSafeEqual } from "node:crypto"
 import { createServer } from "node:http"
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
+import { homedir, networkInterfaces } from "node:os"
 import { Readable } from "node:stream"
 import path from "node:path"
 import process from "node:process"
@@ -8,8 +10,111 @@ import { Service } from "@opencode/client/service"
 
 const isProduction = process.env.NODE_ENV === "production"
 const PORT = Number(process.env.PORT ?? 3123)
-const HOST = process.env.HOST ?? "127.0.0.1"
 const projectDirectory = process.cwd()
+
+/**
+ * Acesso pela rede local. Por padrão a interface só escuta em localhost; o
+ * interruptor do painel "Rede" (ou `HOST`) libera os demais dispositivos.
+ * Quando isso acontece, a autenticação por senha passa a valer para todos.
+ */
+const forcedHost = process.env.HOST?.trim() || undefined
+const envToken = process.env.WEB_TOKEN?.trim() || undefined
+const COOKIE_NAME = "opencode_web"
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+const configDirectory = process.env.XDG_CONFIG_HOME?.trim() || path.join(homedir(), ".config")
+const SETTINGS_FILE = path.join(configDirectory, "opencode-web", "settings.json")
+
+type Settings = { token?: string; networkEnabled?: boolean }
+
+let networkEnabled = false
+let token = ""
+
+function bindHost(): string {
+  if (forcedHost) return forcedHost
+  return networkEnabled ? "0.0.0.0" : "127.0.0.1"
+}
+
+function isLoopback(host: string): boolean {
+  const value = host.toLowerCase()
+  return value === "127.0.0.1" || value === "::1" || value === "localhost"
+}
+
+/** A senha só é exigida quando a interface é alcançável por outros aparelhos. */
+function authEnabled(): boolean {
+  return Boolean(envToken) || !isLoopback(bindHost())
+}
+
+function lanUrls(): string[] {
+  const urls: string[] = []
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === "IPv4" && !address.internal) urls.push(`http://${address.address}:${PORT}`)
+    }
+  }
+  return urls
+}
+
+async function loadSettings(): Promise<Settings> {
+  try {
+    const raw = await readFile(SETTINGS_FILE, "utf8")
+    const parsed = JSON.parse(raw) as Settings
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+async function saveSettings(next: Settings): Promise<void> {
+  try {
+    await mkdir(path.dirname(SETTINGS_FILE), { recursive: true })
+    const temporary = `${SETTINGS_FILE}.tmp-${process.pid}`
+    await writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, "utf8")
+    await rename(temporary, SETTINGS_FILE)
+  } catch (error) {
+    console.warn("[opencode-web] não foi possível salvar as configurações:", error)
+  }
+}
+
+function parseCookies(header: string | undefined): Record<string, string> {
+  const result: Record<string, string> = {}
+  if (!header) return result
+  for (const part of header.split(";")) {
+    const index = part.indexOf("=")
+    if (index === -1) continue
+    const key = part.slice(0, index).trim()
+    if (!key) continue
+    const value = part.slice(index + 1).trim()
+    try {
+      result[key] = decodeURIComponent(value)
+    } catch {
+      result[key] = value
+    }
+  }
+  return result
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  if (left.length !== right.length) return false
+  return timingSafeEqual(left, right)
+}
+
+function cookieHeader(value: string, maxAge: number): string {
+  return [
+    `${COOKIE_NAME}=${encodeURIComponent(value)}`,
+    "HttpOnly",
+    "SameSite=Lax",
+    "Path=/",
+    `Max-Age=${maxAge}`,
+  ].join("; ")
+}
+
+function authorized(req: Request): boolean {
+  if (!authEnabled()) return true
+  const value = parseCookies(req.headers.cookie)[COOKIE_NAME]
+  return Boolean(value) && Boolean(token) && safeEqual(value, token)
+}
 
 type Endpoint = Awaited<ReturnType<typeof Service.ensure>>
 
@@ -276,6 +381,76 @@ function errorResponse(res: Response, status: number, error: string, exception: 
 const app = express()
 app.disable("x-powered-by")
 
+// Autenticação: protege a API e os endpoints internos quando a rede está ligada.
+app.use((req, res, next) => {
+  const target = req.path
+  const scoped =
+    target === "/app" || target.startsWith("/app/") || target === "/api" || target.startsWith("/api/")
+  if (!scoped || target === "/app/auth" || target === "/app/login") return next()
+  if (authorized(req)) return next()
+  res.status(401).json({ error: "unauthorized", message: "Autenticação necessária." })
+})
+
+app.get("/app/auth", (_req, res) => {
+  res.json({ required: authEnabled() })
+})
+
+app.post("/app/login", express.json(), (req, res) => {
+  const value = String((req.body as { token?: unknown } | undefined)?.token ?? "")
+  if (!token || !safeEqual(value, token)) {
+    res.status(401).json({ error: "invalid_token", message: "Senha incorreta." })
+    return
+  }
+  res.setHeader("set-cookie", cookieHeader(token, COOKIE_MAX_AGE))
+  res.json({ ok: true })
+})
+
+app.post("/app/logout", (_req, res) => {
+  res.setHeader("set-cookie", cookieHeader("", 0))
+  res.json({ ok: true })
+})
+
+app.get("/app/network", (_req, res) => {
+  res.json({
+    enabled: networkEnabled,
+    locked: Boolean(forcedHost),
+    host: bindHost(),
+    port: PORT,
+    urls: lanUrls(),
+    token,
+    authRequired: authEnabled(),
+  })
+})
+
+app.post("/app/network", express.json(), async (req, res) => {
+  if (forcedHost) {
+    res.status(409).json({ error: "locked", message: "O endereço é definido pela variável HOST." })
+    return
+  }
+  const body = (req.body ?? {}) as { enabled?: unknown; token?: unknown }
+  const enabled = Boolean(body.enabled)
+  if (enabled) {
+    const candidate = typeof body.token === "string" ? body.token.trim() : ""
+    if (candidate && candidate.length < 6) {
+      res.status(400).json({ error: "weak_token", message: "A senha precisa ter pelo menos 6 caracteres." })
+      return
+    }
+    if (candidate && !envToken) token = candidate
+    if (!token) {
+      res.status(400).json({ error: "token_required", message: "Defina uma senha para ativar o acesso pela rede." })
+      return
+    }
+    // Mantém este navegador autenticado após a reabertura.
+    res.setHeader("set-cookie", cookieHeader(token, COOKIE_MAX_AGE))
+  }
+  networkEnabled = enabled
+  if (!envToken) await saveSettings({ token, networkEnabled })
+  res.json({ enabled, reload: true })
+  setTimeout(() => {
+    void rebind()
+  }, 300)
+})
+
 app.get("/app/config", (_req, res) => {
   res.json({
     directory: projectDirectory,
@@ -345,7 +520,45 @@ app.use("/api", (req, res) => {
 
 const server = createServer(app)
 
+function logStartup() {
+  console.log(`[opencode-web] interface em http://${bindHost()}:${PORT}`)
+  console.log(`[opencode-web] diretório do projeto: ${projectDirectory}`)
+  if (forcedHost) console.log(`[opencode-web] endereço fixado por HOST=${forcedHost}`)
+  if (authEnabled()) {
+    console.log("[opencode-web] acesso pela rede: ATIVADO (senha obrigatória)")
+    console.log(`[opencode-web] senha de acesso: ${token}`)
+    for (const url of lanUrls()) console.log(`[opencode-web] acesse de outro dispositivo: ${url}`)
+  } else {
+    console.log("[opencode-web] acesso pela rede: desativado (somente esta máquina)")
+  }
+}
+
+/** Reabre o servidor no endereço atual, preservando o app (o navegador recarrega). */
+async function rebind() {
+  const host = bindHost()
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve())
+    server.closeAllConnections?.()
+  })
+  await new Promise<void>((resolve) => {
+    const onError = (error: Error) => console.error("[opencode-web] falha ao reabrir o servidor", error)
+    server.once("error", onError)
+    server.listen(PORT, host, () => {
+      server.off("error", onError)
+      logStartup()
+      resolve()
+    })
+  })
+}
+
 async function bootstrap() {
+  const settings = await loadSettings()
+  token = envToken ?? settings.token ?? randomBytes(24).toString("hex")
+  networkEnabled = forcedHost ? !isLoopback(forcedHost) : Boolean(settings.networkEnabled)
+  if (!envToken && !forcedHost && settings.token !== token) {
+    await saveSettings({ token, networkEnabled })
+  }
+
   if (isProduction) {
     const dist = path.join(projectDirectory, "dist")
     app.use(express.static(dist))
@@ -361,9 +574,8 @@ async function bootstrap() {
     app.use(vite.middlewares)
   }
 
-  server.listen(PORT, HOST, () => {
-    console.log(`[opencode-web] interface em http://${HOST}:${PORT}`)
-    console.log(`[opencode-web] diretório do projeto: ${projectDirectory}`)
+  server.listen(PORT, bindHost(), () => {
+    logStartup()
   })
 }
 

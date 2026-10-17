@@ -11,7 +11,7 @@ import {
   type SessionMessageAssistantTool,
   type SessionMessageInfo,
 } from "@opencode/client"
-import type { AppState, ChatMessage, DeliveryMode, ModelRef, Part, ToolCall, ToolContent } from "./types"
+import type { AppState, ChatMessage, DeliveryMode, ModelRef, NetworkInfo, Part, ToolCall, ToolContent } from "./types"
 
 export type OpenCodeClient = ReturnType<typeof OpenCode.make>
 
@@ -43,6 +43,9 @@ const initialState: AppState = {
   returnSessionID: null,
   agentConfigFile: null,
   customAgents: [],
+  authRequired: false,
+  authed: true,
+  network: null,
 }
 
 let state: AppState = initialState
@@ -91,18 +94,90 @@ function api(): OpenCodeClient {
 // ---------------------------------------------------------------- boot
 
 export async function bootstrap() {
-  const config = (await fetch("/app/config").then((response) => response.json())) as { directory: string }
+  if (await readAuthRequired()) {
+    patch({ authRequired: true, authed: false, connection: "offline" })
+    return
+  }
+  await startApp()
+}
+
+async function readAuthRequired(): Promise<boolean> {
+  try {
+    const response = await fetch("/app/auth")
+    if (!response.ok) return false
+    const body = (await response.json()) as { required?: boolean }
+    return Boolean(body.required)
+  } catch {
+    return false
+  }
+}
+
+/** Boots the client once authentication (if required) has been satisfied. */
+async function startApp() {
+  const response = await fetch("/app/config")
+  if (response.status === 401) {
+    patch({ authRequired: true, authed: false, connection: "offline" })
+    return
+  }
+  const config = (await response.json()) as { directory: string }
   directory = config.directory
   client = OpenCode.make({
     baseUrl: window.location.origin,
     headers: { "x-opencode-directory": encodeURIComponent(directory) },
   })
-  patch({ config: { directory } })
+  patch({ config: { directory }, authed: true })
 
-  await Promise.allSettled([loadModels(), loadAgents(), loadAgentConfig(), loadSessions()])
+  await Promise.allSettled([loadModels(), loadAgents(), loadAgentConfig(), loadSessions(), loadNetwork()])
   if (state.sessions.length > 0) await openSession(state.sessions[0].id)
   startEventLoop()
   startActivityPoller()
+}
+
+/** Authenticates this browser with the network access password. */
+export async function login(password: string): Promise<void> {
+  const response = await fetch("/app/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token: password }),
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null
+    throw new Error(body?.message ?? "Senha incorreta")
+  }
+  await startApp()
+}
+
+export async function logout(): Promise<void> {
+  await fetch("/app/logout", { method: "POST" }).catch(() => {})
+  patch({ authRequired: true, authed: false, connection: "offline" })
+  window.location.reload()
+}
+
+/** Reads the local network status (URLs, password, toggle state). */
+export async function loadNetwork(): Promise<void> {
+  try {
+    const response = await fetch("/app/network")
+    if (!response.ok) return
+    patch({ network: (await response.json()) as NetworkInfo })
+  } catch {
+    // silencioso: mantém o último estado conhecido
+  }
+}
+
+/** Enables/disables LAN access. Reloads the page because the server rebinds. */
+export async function setNetwork(enabled: boolean, password?: string): Promise<void> {
+  const response = await fetch("/app/network", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled, token: password }),
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null
+    throw new Error(body?.message ?? `falha ao alterar (${response.status})`)
+  }
+  // O servidor reabre a porta ~300ms depois de responder; recarrega já no novo endereço.
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  window.location.reload()
 }
 
 function startEventLoop() {

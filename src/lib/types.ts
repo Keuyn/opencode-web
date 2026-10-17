@@ -58,6 +58,20 @@ export type ChatMessage = {
 export type ConnectionStatus = "connecting" | "online" | "offline"
 export type RunStatus = "idle" | "busy" | "retry" | "error"
 
+export type NetworkInfo = {
+  /** Whether other devices on the LAN can reach the interface. */
+  enabled: boolean
+  /** True when the address is fixed by the HOST environment variable. */
+  locked: boolean
+  host: string
+  port: number
+  /** Reachable URLs for other devices on the same network. */
+  urls: string[]
+  /** Access password (shown only to authenticated clients). */
+  token: string
+  authRequired: boolean
+}
+
 export type AppState = {
   config: { directory: string } | null
   connection: ConnectionStatus
@@ -95,6 +109,12 @@ export type AppState = {
   agentConfigFile: string | null
   /** IDs of agents defined in the project config file (editable/removable). */
   customAgents: string[]
+  /** Whether the server requires a password (network access enabled). */
+  authRequired: boolean
+  /** Whether this browser is authenticated. */
+  authed: boolean
+  /** Local network status (URLs, password, toggle state). */
+  network: NetworkInfo | null
 }
 
 export type { AgentInfo, FormInfo, ModelInfo, PermissionRequest, SessionInboxInfo, SessionInfo }

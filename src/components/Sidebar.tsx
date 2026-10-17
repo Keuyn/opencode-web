@@ -3,6 +3,7 @@ import { useAppState } from "../lib/useStore"
 import { removeSession, renameSession, startNewChat, openSession, setDirectory } from "../lib/store"
 import { dayBucket, relativeTime } from "../lib/format"
 import type { SessionInfo } from "../lib/types"
+import { NetworkPanel } from "./NetworkPanel"
 
 const BUCKET_LABELS: Record<string, string> = {
   hoje: "Hoje",
@@ -74,6 +75,7 @@ function SessionRow({ session, active }: { session: SessionInfo; active: boolean
 export function Sidebar({ onClose }: { onClose?: () => void }) {
   const state = useAppState()
   const [search, setSearch] = useState("")
+  const [networkOpen, setNetworkOpen] = useState(false)
 
   const groups = useMemo(() => {
     const filtered = state.sessions.filter((session) =>
@@ -153,6 +155,19 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             {state.config.directory}
           </button>
         ) : null}
+        <button
+          type="button"
+          className={`foot-net ${state.network?.enabled ? "on" : ""}`}
+          title={
+            state.network?.enabled
+              ? "Acesso pela rede ativado — clique para gerenciar"
+              : "Acesso pela rede desativado — clique para ativar"
+          }
+          onClick={() => setNetworkOpen((open) => !open)}
+        >
+          <span aria-hidden>🌐</span>
+        </button>
+        {networkOpen ? <NetworkPanel onClose={() => setNetworkOpen(false)} /> : null}
       </div>
     </aside>
   )

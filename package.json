@@ -31,6 +31,7 @@
   },
   "scripts": {
     "dev": "tsx watch server.ts",
+    "lan": "HOST=0.0.0.0 tsx server.ts",
     "build": "vite build",
     "start": "NODE_ENV=production tsx server.ts",
     "typecheck": "tsc --noEmit",
@@ -42,6 +43,7 @@
     "dompurify": "^3.4.17",
     "express": "^5.3.0",
     "marked": "^16.4.2",
+    "qrcode.react": "^4.2.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tsx": "^4.23.15"

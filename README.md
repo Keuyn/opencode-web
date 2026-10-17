@@ -48,8 +48,52 @@ npm start
 # → http://127.0.0.1:3123
 ```
 
-Variáveis de ambiente: `PORT` (padrão `3123`) e `HOST` (padrão `127.0.0.1`, ou seja,
-acessível apenas da sua máquina).
+Variáveis de ambiente: `PORT` (padrão `3123`) e `HOST` (fixa o endereço de escuta;
+veja [acesso pela rede local](#acesso-pela-rede-local)), `WEB_TOKEN` (define a senha
+de acesso em vez de gerar uma) e `NODE_ENV=production` (usado pelo `npm start`).
+
+## Acesso pela rede local
+
+Por padrão a interface escuta só em `127.0.0.1`, ou seja, nenhum outro aparelho
+consegue abrir. Para usar do celular ou de outro computador da mesma rede, clique
+no 🌐 no rodapé da barra lateral e ligue **Disponibilizar na rede local**:
+
+![Painel de rede local](docs/screenshot-network.png)
+
+O painel mostra o endereço (com QR code para abrir direto no celular) e a senha de
+acesso. Três detalhes importantes:
+
+- **Com a rede ligada a senha passa a ser obrigatória.** As chamadas `/api/*` e
+  `/app/*` ficam protegidas por um cookie `HttpOnly` (a página não consegue ler a
+  senha pelo JavaScript) e quem não tiver a senha recebe `401`. Como o acesso é HTTP
+  na rede local, o cookie não usa a flag `Secure`. O mesmo painel permite sair do
+  dispositivo.
+- **Desligar fecha de verdade.** O servidor volta a escutar apenas em `127.0.0.1` e
+  as conexões abertas são encerradas, então nenhum outro aparelho alcança a
+  interface.
+- **A senha e o estado do interruptor ficam salvos** em
+  `~/.config/opencode-web/settings.json`, sobrevivendo a reinícios. Ao subir com a
+  rede ligada o terminal também imprime a senha e o endereço:
+
+```
+[opencode-web] interface em http://0.0.0.0:3123
+[opencode-web] acesso pela rede: ATIVADO (senha obrigatória)
+[opencode-web] senha de acesso: 4f3a1c…
+[opencode-web] acesse de outro dispositivo: http://192.168.0.42:3123
+```
+
+![Tela de senha](docs/screenshot-login.png)
+
+Para deixar sempre ligado sem usar o painel:
+
+```sh
+npm run lan                        # equivale a HOST=0.0.0.0 (o interruptor fica travado)
+WEB_TOKEN=minha-senha npm run lan  # usa uma senha fixa em vez de gerar uma
+```
+
+> Definir `HOST` desliga o interruptor do painel (o endereço passa a ser fixo).
+> Definir `WEB_TOKEN` também exige a senha mesmo em `localhost`. Para voltar ao
+> estado de fábrica, apague `~/.config/opencode-web/settings.json`.
 
 ## O que dá para fazer
 
@@ -85,23 +129,33 @@ acessível apenas da sua máquina).
 - **Diretório de trabalho** — por padrão é o diretório onde o servidor foi iniciado
   (mostrado no rodapé da barra lateral). Clique nele para trocar de pasta: as sessões,
   ferramentas e permissões passam a valer para o novo diretório.
+- **Acesso pela rede local** — o botão 🌐 no rodapé liga/desliga o acesso de outros
+  aparelhos na mesma rede (senha obrigatória sempre que estiver ligado) e mostra o
+  endereço, o QR code e a senha. Veja
+  [acesso pela rede local](#acesso-pela-rede-local).
 
 ## Estrutura
 
 ```
 server.ts                    servidor Express: /app/config, /app/agents (criar/remover
-                             agentes no opencode.json) + proxy streaming para a API
+                             agentes no opencode.json), /app/auth + /app/login
+                             (senha) e /app/network (acesso pela rede) + proxy
+                             streaming para a API
 index.html                   entrada do Vite
 src/main.tsx                 bootstrap (cria o cliente e conecta o stream de eventos)
-src/App.tsx                  layout (barra lateral + chat)
+src/App.tsx                  layout (barra lateral + chat) e porteiro de senha
 src/lib/store.ts             estado da aplicação, redução dos eventos SSE e ações
 src/lib/types.ts             tipos do domínio da interface
 src/lib/format.ts            tempo, tokens, resumo de ferramentas
-src/components/*             Sidebar, Header, AgentPanel, ChatView, Message, ToolCard,
-                             Composer, PermissionCard, FormCard, Markdown
+src/components/*             Sidebar, Header, AgentPanel, NetworkPanel, LoginGate,
+                             ChatView, Message, ToolCard, Composer, PermissionCard,
+                             FormCard, Markdown
 scripts/smoke-store.ts       teste de integração do reducer (sem navegador)
 scripts/smoke-dom.mjs        teste de renderização do bundle real dentro do jsdom
 ```
+
+A senha de acesso e o estado do interruptor de rede ficam em
+`~/.config/opencode-web/settings.json` (fora do projeto).
 
 ### Detalhes de integração
 
@@ -135,8 +189,9 @@ npm run smoke:dom
 
 Ele carrega o bundle de produção dentro do jsdom, confere marca, lista de sessões,
 seletor de modelo, histórico, cartões de ferramenta, markdown e raciocínio, abre o painel
-de agentes (seções e formulário de criação) e depois envia uma mensagem real, verificando
-a resposta do assistente.
+de agentes (seções e formulário de criação), abre o painel de rede (interruptor e senha
+sugerida, fechando com `Esc`) e depois envia uma mensagem real, verificando a resposta do
+assistente.
 
 ## Agentes personalizados
 
@@ -171,6 +226,8 @@ são lidos com suporte a comentários.
 | `openai_unreachable` / 502 nas respostas | Mesmo caso acima; o proxy tenta redescobrir a porta automaticamente |
 | Modelo listado mas resposta falha | Provedor/modelo sem credencial configurada no OpenCode |
 | Nada acontece ao enviar | Verifique o painel de permissões ou o log do terminal onde o `npm run dev` roda |
+| Pede senha ao abrir a interface | O acesso pela rede está ligado: a senha está em `~/.config/opencode-web/settings.json` e no log do servidor |
+| O celular não abre mesmo com a rede ligada | Firewall do sistema bloqueando a porta; libere a porta (padrão `3123`) para a rede local |
 
 ## Licença
 

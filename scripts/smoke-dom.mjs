@@ -119,6 +119,25 @@ if (agentTrigger) {
   await sleep(250)
 }
 
+// painel de rede local (acesso por outros dispositivos)
+const netTrigger = window.document.querySelector(".foot-net")
+results.push(["botão de rede", Boolean(netTrigger)])
+if (netTrigger) {
+  netTrigger.dispatchEvent(new window.MouseEvent("click", { bubbles: true }))
+  results.push(["painel de rede", await waitFor("painel de rede", () => Boolean(window.document.querySelector(".network-panel")))])
+  results.push([
+    "interruptor de rede",
+    await waitForQuiet(() => Boolean(window.document.querySelector(".network-switch input"))),
+  ])
+  results.push([
+    "senha de acesso sugerida",
+    await waitForQuiet(() => (window.document.querySelector("#network-password")?.value.length ?? 0) >= 6),
+  ])
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+  await sleep(250)
+  results.push(["painel fecha com Esc", !window.document.querySelector(".network-panel")])
+}
+
 // digita e envia de verdade
 const textarea = window.document.querySelector(".composer textarea")
 if (textarea) {
