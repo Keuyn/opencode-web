@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react"
 import { Marked } from "marked"
 import DOMPurify from "dompurify"
+import { copyText } from "../lib/browser"
 
 const marked = new Marked({ gfm: true, breaks: true })
 
@@ -35,7 +36,7 @@ export function Markdown({ text }: { text: string }) {
       button.textContent = "Copiar"
       button.addEventListener("click", () => {
         const code = pre.querySelector("code")?.textContent ?? ""
-        void navigator.clipboard.writeText(code)
+        void copyText(code)
         button.textContent = "Copiado!"
         window.setTimeout(() => {
           button.textContent = "Copiar"

@@ -329,6 +329,7 @@ são lidos com suporte a comentários.
 | `openai_unreachable` / 502 nas respostas | Mesmo caso acima; o proxy tenta redescobrir a porta automaticamente |
 | Modelo listado mas resposta falha | Provedor/modelo sem credencial configurada no OpenCode |
 | Nada acontece ao enviar | Verifique o painel de permissões ou o log do terminal onde o `npm run dev` roda |
+| A mensagem nem aparece ao enviar **pelo celular/rede** | Versão antiga do bundle: em `http://` (fora de `localhost`) `crypto.randomUUID` não existe — já corrigido em `src/lib/browser.ts`; recarregue a página (`Ctrl+Shift+R`) |
 | Pede senha ao abrir a interface | O acesso pela rede está ligado: a senha personalizada aparece no painel 🌐 e a do terminal no log do servidor |
 | O agente está trabalhando na pasta errada | Cada aparelho usa a pasta do próprio projeto: confira a aba *Projeto* (ou *Aparelhos*, no dono) |
 | As conversas antigas sumiram ao trocar de projeto | Cada projeto tem as próprias sessões — volte para a pasta anterior na aba *Projeto* |

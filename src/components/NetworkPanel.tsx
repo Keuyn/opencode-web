@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { QRCodeSVG } from "qrcode.react"
 import { useAppState } from "../lib/useStore"
 import { changePassword, loadNetwork, logout, setNetwork } from "../lib/store"
+import { copyText } from "../lib/browser"
 import { ProjectSection } from "./ProjectPanel"
 import { DeviceSection } from "./DevicePanel"
 
@@ -112,7 +113,7 @@ function NetworkSection() {
   }
 
   function copy(text: string, label: string) {
-    void navigator.clipboard.writeText(text).catch(() => {})
+    void copyText(text)
     setCopied(label)
     window.setTimeout(() => setCopied(null), 1500)
   }

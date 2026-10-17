@@ -23,6 +23,7 @@ import type {
   ToolCall,
   ToolContent,
 } from "./types"
+import { uuid } from "./browser"
 
 export type OpenCodeClient = ReturnType<typeof OpenCode.make>
 
@@ -1019,7 +1020,7 @@ export async function sendPrompt(text: string) {
     return
   }
 
-  const optimisticID = `local-${crypto.randomUUID()}`
+  const optimisticID = `local-${uuid()}`
   patch({
     messages: [
       ...state.messages,

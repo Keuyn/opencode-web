@@ -2,6 +2,7 @@ import { useState } from "react"
 import { Markdown } from "./Markdown"
 import { ToolCard } from "./ToolCard"
 import { formatTokens } from "../lib/format"
+import { copyText } from "../lib/browser"
 import type { ChatMessage } from "../lib/types"
 
 function Reasoning({ text, streaming }: { text: string; streaming: boolean }) {
@@ -56,7 +57,7 @@ export function Message({ message, streaming }: { message: ChatMessage; streamin
       .filter((part) => part.kind === "text")
       .map((part) => (part.kind === "text" ? part.text : ""))
       .join("\n\n")
-    void navigator.clipboard.writeText(text)
+    void copyText(text)
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1500)
   }
